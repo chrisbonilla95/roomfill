@@ -1,0 +1,8 @@
+.build/
+build/
+vendor/
+/Roomfill
+.superpowers/
+.DS_Store
+_CodeSignature/
+.codesign-identity

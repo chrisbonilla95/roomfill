@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>io.chrisbonilla.roomfill</string>
+  <key>CFBundleName</key><string>Roomfill</string>
+  <key>CFBundleDisplayName</key><string>Roomfill</string>
+  <key>CFBundleExecutable</key><string>Roomfill</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>LSUIElement</key><true/>
+  <key>NSAudioCaptureUsageDescription</key><string>Captures the apps you choose so they play on your soundbar and Bluetooth speaker.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Finds your AirPlay soundbar and streams audio to it.</string>
+  <key>NSBonjourServices</key><array><string>_airplay._tcp</string><string>_raop._tcp</string></array>
+  <key>NSAppleEventsUsageDescription</key><string>Reads the current Spotify track so the soundbar can show it.</string>
+  <key>NSMicrophoneUsageDescription</key><string>The sync test listens to both speakers to line them up.</string>
+</dict>
+</plist>
