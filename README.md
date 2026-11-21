@@ -39,7 +39,7 @@ notifications, calls and YouTube stay on the MacBook speakers or AirPods.
 | Role | Device | Notes |
 |---|---|---|
 | AirPlay | Samsung HW-Q800D soundbar | needs PTP timing and 16-bit ALAC; has a [volume scale preset](#volume-scales) |
-| Bluetooth | Bose portable Bluetooth speaker | about 0.7 s Bluetooth delay, which sets the overall lag |
+| Bluetooth | Bose SoundLink Max | about 0.7 s Bluetooth delay, which sets the overall lag |
 | Mac | MacBook Pro, Apple Silicon, macOS 26 | |
 
 Other AirPlay 2 speakers and Bluetooth speakers should work; reports (working or not) are welcome as
