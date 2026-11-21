@@ -131,7 +131,8 @@ Layout:
 
 ## License and credits
 
-Roomfill is licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)).
+Roomfill is licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)). Bundled
+third-party software is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The app bundles [airplay-cli](https://github.com/music-assistant/airplay-cli) v0.5.15 unmodified, run
 as a separate process. airplay-cli is licensed under GPL-3.0; its license and third-party notices are
