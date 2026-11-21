@@ -4,9 +4,9 @@ public enum SoundbarState: Equatable, Sendable {
     case connecting, ready, playing, released, notResponding, lost(String), off
 }
 
-/// Moves audio from the engine's soundbar ring to an airplay-cli session: resamples by a tiny ratio
-/// steered by airplay-cli's queue depth, converts to dithered 16-bit, and releases the soundbar after
-/// `idleTimeout` seconds of silence. Public methods must be called on the main thread.
+/// Moves audio from the engine's soundbar ring to an airplay-cli session, unchanged except for dithered
+/// 16-bit conversion, and releases the soundbar after `idleTimeout` seconds of silence.
+/// Public methods must be called on the main thread.
 public final class SoundbarFeed: @unchecked Sendable {
     /// Called on the main queue.
     public var onState: ((SoundbarState) -> Void)?
@@ -26,8 +26,6 @@ public final class SoundbarFeed: @unchecked Sendable {
     private var sender: AirPlaySender?          // guarded by lock
     private var senderRate: Double = 0           // guarded by lock
     private var framesWritten: Int = 0           // guarded by lock
-    private var ratio: Double = 1                // guarded by lock
-    private var controller: FillController?      // main thread
     private var depthSamples = 0                 // main thread
     private var stallRetries = 0
     private var session = SessionStatus()
@@ -183,14 +181,12 @@ public final class SoundbarFeed: @unchecked Sendable {
             setState(.lost("could not start AirPlay (\(error))"))
             return
         }
-        controller = nil
         depthSamples = 0
         session = SessionStatus()
         lock.lock()
         sender = s
         senderRate = rate
         framesWritten = 0
-        ratio = 1
         lock.unlock()
     }
 
@@ -241,23 +237,19 @@ public final class SoundbarFeed: @unchecked Sendable {
         setState(.lost("taken by another device"))
     }
 
-    /// airplay-cli queue depth = audio written minus audio played; steer it back to its first stable value.
+    /// Logs airplay-cli's queue (audio written minus audio played) for diagnostics. It is not used for
+    /// steering: `elapsed_ms` counts played samples, so the queue cannot reveal clock drift, and a
+    /// controller chasing it only stretched the audio.
     private func updateDepth(elapsedMs: Int) {
         lock.lock()
         let written = framesWritten
         let rate = senderRate
         lock.unlock()
         guard rate > 0 else { return }
-        let depthFrames = written - Int(Double(elapsedMs) / 1000 * rate)
         depthSamples += 1
-        if depthSamples == 3 { controller = FillController(targetFrames: depthFrames) }
-        guard var c = controller else { return }
-        let r = c.ratio(fillFrames: depthFrames)
-        controller = c
-        lock.lock(); ratio = r; lock.unlock()
         if depthSamples % 10 == 0 {
-            onLog?(String(format: "soundbar queue %.0f ms (target %.0f), ratio %+.1f ppm",
-                          Double(depthFrames) / rate * 1000, c.targetFrames / rate * 1000, (r - 1) * 1e6))
+            let depthMs = (Double(written) / rate - Double(elapsedMs) / 1000) * 1000
+            onLog?(String(format: "soundbar queue %.0f ms", depthMs))
         }
     }
 
@@ -281,13 +273,12 @@ public final class SoundbarFeed: @unchecked Sendable {
     private func writerLoop() {
         let blockFrames = 1024
         var block = [Float](repeating: 0, count: blockFrames * 2)
-        var resampled: [Float] = []
-        var pcm = [Int16](repeating: 0, count: blockFrames * 4)
+        var pcm = [Int16](repeating: 0, count: blockFrames * 2)
         var dither = TPDFDither()
         var idle = IdleMonitor(timeout: idleTimeout)
-        let resampler = SincResampler(channels: 2)
         let clockStart = ProcessInfo.processInfo.systemUptime
-        var gaps = GapFiller(threshold: 0.05)
+        var gaps = GapFiller(threshold: 0.05, margin: 0.1)
+        var dropFrames = 0
         gaps.dataArrived(at: clockStart)
         let silence = [Int16](repeating: 0, count: blockFrames * 2)
         while active {
@@ -312,7 +303,24 @@ public final class SoundbarFeed: @unchecked Sendable {
                 usleep(2000)
                 continue
             }
-            gaps.dataArrived(at: ProcessInfo.processInfo.systemUptime)
+            // Settle a stall exactly: the engine measured how much audio time passed while it rebuilt, so
+            // pad what is still missing or drop surplus silence. The soundbar's timing stays put.
+            do {
+                let now = ProcessInfo.processInfo.systemUptime
+                lock.lock(); let s = sender; lock.unlock()
+                if let gapFrames = engine.takeRestartGapFrames() {
+                    let fix = gapCorrection(gapFrames: gapFrames, alreadyPadded: gaps.paddedFrames)
+                    dropFrames += fix.drop
+                    var remaining = s == nil ? 0 : fix.pad
+                    while remaining > 0, let s {
+                        let chunk = min(remaining, blockFrames)
+                        guard silence.withUnsafeBufferPointer({ s.writePCM($0.baseAddress!, count: chunk * 2) }) else { break }
+                        remaining -= chunk
+                        lock.lock(); framesWritten += chunk; lock.unlock()
+                    }
+                }
+                gaps.dataArrived(at: now)
+            }
             let frames = n / 2
             lock.lock()
             if idleResetRequested { idleResetRequested = false; idle = IdleMonitor(timeout: idleTimeout) }
@@ -325,7 +333,6 @@ public final class SoundbarFeed: @unchecked Sendable {
 
             lock.lock()
             let s = sender
-            let r = ratio
             let rateMismatch = s != nil && senderRate != engine.sampleRate
             let queueReconnect = rateMismatch && !rateReconnectQueued
             if queueReconnect { rateReconnectQueued = true }
@@ -335,15 +342,17 @@ public final class SoundbarFeed: @unchecked Sendable {
                 continue
             }
             guard let s else { continue }
-            block.withUnsafeBufferPointer { resampler.process($0.baseAddress!, frames: frames, ratio: r, output: &resampled) }
-            let count = resampled.count
-            if pcm.count < count { pcm = [Int16](repeating: 0, count: count) }
-            resampled.withUnsafeBufferPointer { src in
-                pcm.withUnsafeMutableBufferPointer { floatToS16LE(src.baseAddress!, count: count, into: $0.baseAddress!, dither: &dither) }
+            let skip = min(dropFrames, frames)
+            dropFrames -= skip
+            let keep = frames - skip
+            guard keep > 0 else { continue }
+            block.withUnsafeBufferPointer { src in
+                pcm.withUnsafeMutableBufferPointer {
+                    floatToS16LE(src.baseAddress! + 2 * skip, count: keep * 2, into: $0.baseAddress!, dither: &dither)
+                }
             }
-            let ok = pcm.withUnsafeBufferPointer { s.writePCM($0.baseAddress!, count: count) }
-            if ok {
-                lock.lock(); framesWritten += count / 2; lock.unlock()
+            if pcm.withUnsafeBufferPointer({ s.writePCM($0.baseAddress!, count: keep * 2) }) {
+                lock.lock(); framesWritten += keep; lock.unlock()
             }
         }
     }

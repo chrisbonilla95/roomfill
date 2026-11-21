@@ -16,7 +16,7 @@ func usage() -> Never {
            rfprobe apps
            rfprobe run --apps <id,id> [--offset ms] [--seconds N] [--bose-volume 0..1] --bose <bluetooth name>
                        [--soundbar name] [--volume 0..100] [--idle seconds]
-                       [--synctest] [--apply] [--verify]
+                       [--synctest] [--apply] [--verify] [--repeat N] [--interval seconds]
     """)
     exit(2)
 }
@@ -230,8 +230,9 @@ func runEngine(_ args: [String]) {
             show("synctest", first)
             if args.contains("--verify") {
                 let repeats = Int(option(args, "--repeat") ?? "1") ?? 1
+                let interval = Double(option(args, "--interval") ?? "2") ?? 2
                 for i in 1...repeats {
-                    try? await Task.sleep(for: .seconds(2))
+                    try? await Task.sleep(for: .seconds(interval))
                     show("verify \(i) at \(Int(Date().timeIntervalSince(started)))s", await runSyncTest(engine: engine, apply: false, manageMicrophone: !keepMic))
                 }
             }

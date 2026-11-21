@@ -115,8 +115,8 @@ sync test (`swift run rfprobe` prints usage).
 
 Layout:
 
-- [`Sources/RoomfillCore`](Sources/RoomfillCore): capture engine, AirPlay sender wrapper, resampling,
-  sync measurement
+- [`Sources/RoomfillCore`](Sources/RoomfillCore): capture engine, AirPlay sender wrapper, sync
+  measurement
 - [`Sources/Roomfill`](Sources/Roomfill): the menu bar app (SwiftUI)
 - [`Sources/rfprobe`](Sources/rfprobe): hardware diagnostics
 - [`Tests/RoomfillCoreTests`](Tests/RoomfillCoreTests): unit tests

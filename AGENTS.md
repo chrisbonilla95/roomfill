@@ -23,7 +23,7 @@ binaries.
 | Path | What lives there |
 |---|---|
 | [`Sources/RoomfillCore/Engine.swift`](Sources/RoomfillCore/Engine.swift) | muted process tap, private aggregate device, IO callback fan-out to the Bluetooth speaker and the AirPlay ring |
-| [`Sources/RoomfillCore/SoundbarFeed.swift`](Sources/RoomfillCore/SoundbarFeed.swift) | writer thread: ring, resampler, 16-bit PCM to airplay-cli; idle release; takeover watch |
+| [`Sources/RoomfillCore/SoundbarFeed.swift`](Sources/RoomfillCore/SoundbarFeed.swift) | writer thread: ring to 16-bit PCM to airplay-cli; idle release; takeover watch |
 | [`Sources/RoomfillCore/AirPlaySender.swift`](Sources/RoomfillCore/AirPlaySender.swift), [`AirPlayStatus.swift`](Sources/RoomfillCore/AirPlayStatus.swift) | airplay-cli process, command fifo, `[STATUS]` parsing, session state |
 | [`Sources/RoomfillCore/SyncTest.swift`](Sources/RoomfillCore/SyncTest.swift), [`SyncMath.swift`](Sources/RoomfillCore/SyncMath.swift) | microphone sync test (GCC-PHAT) |
 | [`Sources/RoomfillCore/SoundbarScale.swift`](Sources/RoomfillCore/SoundbarScale.swift) | per-model volume scales |
@@ -36,7 +36,7 @@ binaries.
 ```
 selected apps --(Core Audio process tap, muted)--> private aggregate device (Bluetooth speaker = clock)
    IO callback --> delay line --> Bluetooth speaker output
-               --> delay line --> lock-free ring --> writer thread --> resampler --> s16le
+               --> delay line --> lock-free ring --> writer thread --> s16le
                                                      --> airplay-cli stdin (AirPlay 2, PTP, ALAC) --> AirPlay speaker
 ```
 
@@ -59,8 +59,11 @@ Breaking any of these brings back a bug that was already fixed:
 - **16-bit only.** The tested soundbar plays 24-bit ALAC with heavy distortion. `SenderConfig` defaults
   to 16-bit with TPDF dither.
 - **PTP timing is required** for Samsung soundbars; senders using NTP connect but play silence.
-- **airplay-cli reads stdin faster than real time**, so writes do not pace anything. Drift is steered
-  from airplay-cli's queue depth (frames written minus `elapsed_ms`), not from our ring fill.
+- **Do not steer the stream rate from airplay-cli's queue.** airplay-cli reads stdin faster than real
+  time and its `elapsed_ms` counts samples played, so "frames written minus `elapsed_ms`" stays
+  constant whatever we do. A rate controller chasing it once stretched the audio by up to 400 ppm and
+  the AirPlay speaker drifted about 17 ms later per minute. The Bluetooth speaker's clock tracks the
+  host clock within about 1 ppm, so audio is passed through unchanged.
 - **Keep airplay-cli's input continuous.** If the engine stalls (rebuilds), `GapFiller` writes
   silence; otherwise airplay-cli pauses its timeline and the AirPlay speaker ends up later for good.
 - **"Playing" only after the clock locks** (`SessionStatus`); before PTP lock the speaker renders late.

@@ -1,6 +1,7 @@
 import AudioToolbox
 import CoreAudio
 import Foundation
+import Synchronization
 
 public struct EngineConfig: Sendable {
     public var boseName: String
@@ -90,6 +91,16 @@ public final class Engine: @unchecked Sendable {
     public private(set) var inputLayout = ""
     private var layoutCaptured = false
 
+    // Exact audio gap across an IO restart, measured from buffer host times (-1 = none pending).
+    private let restartGap = Atomic<Int>(-1)
+    private var expectedNextHost: UInt64 = 0
+    private var startedFresh = false
+    private let hostTicksPerSecond: Double = {
+        var tb = mach_timebase_info_data_t()
+        mach_timebase_info(&tb)
+        return 1e9 * Double(tb.denom) / Double(tb.numer)
+    }()
+
     // Sync test: silence one speaker while the other is measured.
     var muteBose = false
     var muteSoundbar = false
@@ -141,7 +152,15 @@ public final class Engine: @unchecked Sendable {
     public func stop() {
         running = false
         teardown()
+        expectedNextHost = 0
         gate.failed()
+    }
+
+    /// Frames of audio time that passed while the IO was rebuilding, measured once per restart from the
+    /// buffers' host timestamps; nil when no restart is pending.
+    public func takeRestartGapFrames() -> Int? {
+        let v = restartGap.exchange(-1, ordering: .acquiringAndReleasing)
+        return v >= 0 ? v : nil
     }
 
     public func setSelectedApps(_ ids: Set<String>) {
@@ -316,9 +335,10 @@ public final class Engine: @unchecked Sendable {
         layoutCaptured = false
         applyDelays()
 
-        st = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) { [unowned self] _, input, _, output, _ in
+        startedFresh = true
+        st = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) { [unowned self] _, input, _, output, outputTime in
             self.render(input: UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input)),
-                        output: UnsafeMutableAudioBufferListPointer(output))
+                        output: UnsafeMutableAudioBufferListPointer(output), time: outputTime.pointee)
         }
         guard st == noErr else { throw EngineError.ioProc(st) }
         st = AudioDeviceStart(aggregateID, procID)
@@ -361,7 +381,8 @@ public final class Engine: @unchecked Sendable {
 
     // MARK: - IO thread
 
-    private func render(input: UnsafeMutableAudioBufferListPointer, output: UnsafeMutableAudioBufferListPointer) {
+    private func render(input: UnsafeMutableAudioBufferListPointer, output: UnsafeMutableAudioBufferListPointer,
+                        time: AudioTimeStamp) {
         if !layoutCaptured {
             layoutCaptured = true
             inputLayout = "[" + input.map { String($0.mNumberChannels) }.joined(separator: ",") + "]"
@@ -369,6 +390,16 @@ public final class Engine: @unchecked Sendable {
         let (outL, outLS, outFrames) = locate(output, channel: 0)
         let (outR, outRS, _) = locate(output, channel: 1)
         let frames = min(outFrames, maxFrames)
+        if time.mFlags.contains(.hostTimeValid) {
+            if startedFresh {
+                startedFresh = false
+                if expectedNextHost != 0 {
+                    let gap = time.mHostTime > expectedNextHost ? Double(time.mHostTime - expectedNextHost) : 0
+                    restartGap.store(Int((gap / hostTicksPerSecond * sampleRate).rounded()), ordering: .releasing)
+                }
+            }
+            expectedNextHost = time.mHostTime + UInt64(Double(frames) / sampleRate * hostTicksPerSecond)
+        }
 
         var inL: UnsafeMutablePointer<Float>? = nil, inR: UnsafeMutablePointer<Float>? = nil
         var inLS = 0, inRS = 0, inFrames = 0

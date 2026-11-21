@@ -35,15 +35,18 @@ public struct IdleMonitor {
     }
 }
 
-/// Tracks how much silence must be inserted to keep a real-time stream continuous while its source
-/// is stalled: once nothing has arrived for `threshold` seconds, the whole gap since the last data is owed.
+/// Tracks how much silence to insert while a real-time stream's source is stalled: once nothing has
+/// arrived for `threshold` seconds, the gap since the last data minus `margin` is owed. The margin keeps
+/// the estimate from overshooting; the exact remainder is settled with `gapCorrection` when data resumes.
 public struct GapFiller {
     public let threshold: TimeInterval
+    public let margin: TimeInterval
     private var lastData: TimeInterval = 0
-    private var paddedFrames = 0
+    public private(set) var paddedFrames = 0
 
-    public init(threshold: TimeInterval) {
+    public init(threshold: TimeInterval, margin: TimeInterval = 0) {
         self.threshold = threshold
+        self.margin = margin
     }
 
     public mutating func dataArrived(at now: TimeInterval) {
@@ -59,6 +62,18 @@ public struct GapFiller {
     public func framesOwed(at now: TimeInterval, rate: Double) -> Int {
         let gap = now - lastData
         guard gap > threshold else { return 0 }
-        return max(0, Int((gap * rate).rounded()) - paddedFrames)
+        return max(0, Int(((gap - margin) * rate).rounded()) - paddedFrames)
     }
+}
+
+public struct GapCorrection: Equatable, Sendable {
+    public var pad: Int
+    public var drop: Int
+}
+
+/// Settles a stall once its exact length is known: pad what is still missing, or drop the surplus
+/// silence already sent from the incoming audio.
+public func gapCorrection(gapFrames: Int, alreadyPadded: Int) -> GapCorrection {
+    gapFrames >= alreadyPadded ? GapCorrection(pad: gapFrames - alreadyPadded, drop: 0)
+                               : GapCorrection(pad: 0, drop: alreadyPadded - gapFrames)
 }
