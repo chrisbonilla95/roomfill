@@ -28,3 +28,11 @@ import Testing
     for t in 0..<10 { _ = m.observe(peak: 1e-6, now: Double(t)) }
     #expect(m.observe(peak: 1e-6, now: 10) == .release)
 }
+
+@Test func shorterTimeoutAppliesToSilenceAlreadyElapsed() {
+    var m = IdleMonitor(timeout: 300)
+    _ = m.observe(peak: 0.1, now: 0)
+    #expect(m.observe(peak: 0, now: 100) == nil)
+    m.timeout = 60
+    #expect(m.observe(peak: 0, now: 101) == .release)
+}

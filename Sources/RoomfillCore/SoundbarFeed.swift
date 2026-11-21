@@ -20,7 +20,7 @@ public final class SoundbarFeed: @unchecked Sendable {
     private let receiverName: String
     private let binaryURL: URL
     private var volume: Int
-    private let idleTimeout: TimeInterval
+    private var idleTimeout: TimeInterval   // guarded by lock
 
     private let lock = NSLock()
     private var sender: AirPlaySender?          // guarded by lock
@@ -91,6 +91,12 @@ public final class SoundbarFeed: @unchecked Sendable {
         volume = v
         lock.lock(); let s = sender; lock.unlock()
         s?.setVolume(v)
+    }
+
+    /// Changes how long the soundbar may stay silent before it is released. Takes effect on the next
+    /// audio block, counting silence that has already elapsed; the stream is not interrupted.
+    public func setIdleTimeout(_ seconds: TimeInterval) {
+        lock.lock(); idleTimeout = seconds; lock.unlock()
     }
 
     /// Starts a fresh session, e.g. after the soundbar was taken by another sender.
@@ -275,7 +281,7 @@ public final class SoundbarFeed: @unchecked Sendable {
         var block = [Float](repeating: 0, count: blockFrames * 2)
         var pcm = [Int16](repeating: 0, count: blockFrames * 2)
         var dither = TPDFDither()
-        var idle = IdleMonitor(timeout: idleTimeout)
+        lock.lock(); var idle = IdleMonitor(timeout: idleTimeout); lock.unlock()
         let clockStart = ProcessInfo.processInfo.systemUptime
         var gaps = GapFiller(threshold: 0.05, margin: 0.1)
         var dropFrames = 0
@@ -324,6 +330,7 @@ public final class SoundbarFeed: @unchecked Sendable {
             let frames = n / 2
             lock.lock()
             if idleResetRequested { idleResetRequested = false; idle = IdleMonitor(timeout: idleTimeout) }
+            idle.timeout = idleTimeout
             lock.unlock()
             var peak: Float = 0
             for i in 0..<n { peak = max(peak, abs(block[i])) }

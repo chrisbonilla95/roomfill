@@ -172,7 +172,7 @@ final class AppModel: ObservableObject {
         var s = settings
         s.idleTimeoutSec = Double(max(1, minutes) * 60)
         update(s)
-        restartIfOn()
+        feed?.setIdleTimeout(s.idleTimeoutSec)
     }
 
     func chooseSoundbar(_ name: String) {

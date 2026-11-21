@@ -6,7 +6,7 @@ public enum IdleAction: Equatable, Sendable {
 
 /// Decides when a silent stream should give up the soundbar and when sound should reclaim it.
 public struct IdleMonitor {
-    public let timeout: TimeInterval
+    public var timeout: TimeInterval
     public let silenceThreshold: Float
     private var lastSound: TimeInterval?
     private var released = false
