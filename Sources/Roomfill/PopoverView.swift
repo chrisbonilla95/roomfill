@@ -9,6 +9,9 @@ struct PopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .frame(width: 22, height: 22)
                 Text("Roomfill").font(.headline)
                 Spacer()
                 Toggle("On", isOn: Binding(get: { model.settings.isOn }, set: { model.setOn($0) }))

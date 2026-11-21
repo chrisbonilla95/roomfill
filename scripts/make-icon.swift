@@ -1,5 +1,6 @@
 // Draws the app icon into an .iconset directory: a speaker sending sound both ways on a gradient square.
 // Usage: swift scripts/make-icon.swift <output.iconset>
+// assets/icon.png (README) is the 256 px file from this script.
 import AppKit
 
 let out = URL(fileURLWithPath: CommandLine.arguments[1])

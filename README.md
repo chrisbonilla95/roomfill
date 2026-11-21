@@ -1,4 +1,6 @@
-# Roomfill
+<p align="center"><img src="assets/icon.png" width="128" alt="Roomfill app icon"></p>
+
+<h1 align="center">Roomfill</h1>
 
 A macOS menu bar app that plays the apps you choose on an AirPlay speaker and a Bluetooth speaker at
 the same time, in sync, while everything else on your Mac keeps playing on its normal output.
